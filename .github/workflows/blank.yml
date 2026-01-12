@@ -23,5 +23,5 @@ jobs:
       - name: sorting
         run: |
           cd ./1.\ homeWork/
-          chmod +x Sorting
+          chmod +x Sorting.sh
           ./Sorting.sh
