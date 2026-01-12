@@ -1,6 +1,4 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
+name: homeWorkTest
 
 # Controls when the workflow will run
 on:
@@ -8,7 +6,7 @@ on:
   push:
     branches: [ "homeWork" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "homeWork" ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -26,11 +24,11 @@ jobs:
       - uses: actions/checkout@v4
 
       # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: check disk
+        run: ./hhomeWork/CheckDisk.sh
 
       # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: hi
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          chmod +x homeWork/Hi.sh
+          ./homeWork/Hi.sh
