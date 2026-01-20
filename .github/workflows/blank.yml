@@ -1,0 +1,27 @@
+name: homeWorkTest
+on:
+  push:
+    branches: [ "homeWork" ]
+  pull_request:
+    branches: [ "homeWork" ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check disk
+        run: |
+          cd ./1.\ homeWork/
+          chmod +x CheckDisk.sh
+          ./CheckDisk.sh
+      - name: hi
+        run: |
+          cd ./1.\ homeWork/
+          chmod +x Hi.sh
+          ./Hi.sh
+      - name: sorting
+        run: |
+          cd ./1.\ homeWork/
+          chmod +x Sorting.sh
+          ./Sorting.sh
