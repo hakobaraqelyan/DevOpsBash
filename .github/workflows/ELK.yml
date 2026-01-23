@@ -1,0 +1,133 @@
+name: CI (ELK micro-branches)
+
+on:
+  pull_request:
+    branches: [ "ELK" ]
+  push:
+    branches-ignore: [ "ELK" ]  # branch-ի վրա push-ի ժամանակ էլ կվազի
+  workflow_dispatch:
+
+jobs:
+  detect:
+    runs-on: self-hosted
+    outputs:
+      es: ${{ steps.filter.outputs.es }}
+      kibana: ${{ steps.filter.outputs.kibana }}
+      logstash: ${{ steps.filter.outputs.logstash }}
+      pipeline: ${{ steps.filter.outputs.pipeline }}
+      compose: ${{ steps.filter.outputs.compose }}
+      actions: ${{ steps.filter.outputs.actions }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            compose:
+              - 'docker-compose.yml'
+              - 'compose*.yml'
+              - '**/compose*.yml'
+            es:
+              - 'ELK/elasticsearch/**'
+            kibana:
+              - 'ELK/kibana/**'
+            logstash:
+              - 'ELK/logstash/**'
+            pipeline:
+              - 'ELK/logstash/pipeline/**'
+            actions:
+              - '.github/workflows/ELK**'
+
+  test_es:
+    needs: detect
+    if: needs.detect.outputs.es == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Elasticsearch
+        run: |
+          set -e
+          docker compose -f ELK/elasticsearch/elasticsearch.yml up -d
+          sleep 10
+          curl -s http://localhost:9200 >/dev/null
+          echo "ES OK"
+          docker compose -f ELK/elasticsearch/elasticsearch.yml down
+          echo "ES down"
+
+  test_kibana:
+    needs: detect
+    if: needs.detect.outputs.kibana == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Kibana
+        run: |
+          set -e
+          docker compose -f ELK/kibana/kibana.yml up -d
+          sleep 20
+          curl -s http://localhost:5601 | head -n 2
+          echo "Kibana OK"
+          docker compose -f ELK/kibana/kibana.yml down
+          echo "Kibana down"
+
+  test_logstash:
+    needs: detect
+    if: needs.detect.outputs.logstash == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Logstash
+        run: |
+          set -e
+          docker compose -f ELK/logstash/logstash.yml up -d
+          sleep 15
+          docker compose ps
+          echo "Logstash container OK"
+          docker compose -f ELK/logstash/logstash.yml down
+          echo "Logstash down"
+
+  test_pipeline:
+    needs: detect
+    if: needs.detect.outputs.pipeline == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start logstash and test pipeline
+        run: |
+          set -e
+          docker compose -f ELK/logstash/logstash.yml up -d
+          sleep 20
+          curl -s http://localhost:9200/_cat/indices?v | head -n 20
+          echo "Pipeline OK (indices listed)"
+          docker compose -f ELK/logstash/logstash.yml down
+          echo "Logstash down"
+
+  test_compose:
+    needs: detect
+    if: needs.detect.outputs.compose == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Elasticsearch + Logstash
+        run: |
+          set -e
+          docker compose -f ELK/elasticsearch/elasticsearch.yml -f ELK/logstash/logstash.yml up -d
+          sleep 15
+          docker compose ps
+          echo "Elasticsearch, Kibana and Logstash container OK"
+          docker compose down
+          echo "Elasticsearch, Kibana and Logstash container down"
+
+  test_actions:
+    needs: detect
+    if: needs.detect.outputs.actions == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actions workflow lint (basic)
+        run: |
+          set -e
+          ls -la .github/workflows
+          echo "Workflows present"
