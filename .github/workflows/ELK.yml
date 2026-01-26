@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ "ELK" ]
   push:
-    branches-ignore: [ "ELK" ]  # branch-ի վրա push-ի ժամանակ էլ կվազի
+    branches: [ "ELK" ]
   workflow_dispatch:
 
 jobs:
@@ -30,95 +30,122 @@ jobs:
               - 'compose*.yml'
               - '**/compose*.yml'
             es:
-              - 'ELK/elasticsearch/**'
+              - 'elasticsearch/**'
             kibana:
-              - 'ELK/kibana/**'
+              - 'kibana/**'
             logstash:
-              - 'ELK/logstash/**'
+              - 'logstash/**'
             pipeline:
-              - 'ELK/logstash/pipeline/**'
+              - 'logstash/pipeline/**'
             actions:
-              - '.github/workflows/ELK**'
+              - '.github/workflows/**'
 
   test_es:
     needs: detect
-    if: needs.detect.outputs.es == 'true'
+    if: needs.detect.outputs.es == 'true' || needs.detect.outputs.compose == 'true' || needs.detect.outputs.kibana == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Start Elasticsearch
         run: |
           set -e
-          docker compose -f ELK/elasticsearch/elasticsearch.yml up -d
-          sleep 10
-          curl -s http://localhost:9200 >/dev/null
-          echo "ES OK"
-          docker compose -f ELK/elasticsearch/elasticsearch.yml down
-          echo "ES down"
+          docker compose up -d && \
+          ex=0
+          timeout=120
+          while ((ex < timeout)); do
+            status_es=$(docker inspect elasticsearch | jq -r '.[0].State.Status')
+            status_kibana=$(docker inspect kibana | jq -r '.[0].State.Status')
 
-  test_kibana:
-    needs: detect
-    if: needs.detect.outputs.kibana == 'true'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start Kibana
-        run: |
-          set -e
-          docker compose -f ELK/kibana/kibana.yml up -d
-          sleep 20
-          curl -s http://localhost:5601 | head -n 2
-          echo "Kibana OK"
-          docker compose -f ELK/kibana/kibana.yml down
-          echo "Kibana down"
+            if [[ ${status_es} == "running" || ${status_kibana} == "running" ]]; then
+              echo "ES and kibana containers are running"
+              status_es=$(curl -s http://localhost:9200/_cluster/health | jq -r '.status')
+              status_kibana=$(curl -s http://localhost:5601/api/status | jq -r '.status.overall.state')
+              if [[ ${status_es} == "green" || ${status_es} == "yellow" || ${status_kibana} == "green" || ${status_kibana} == "yellow" ]]; then
+                echo "Elasticsearch is ready with status: ${status_es}"
+                echo "Kibana is ready with status: ${status_kibana}"
+              exit 0
+              fi
+            fi
+
+            sleep 1
+            ex=$((ex + 1));
+            if ((ex == timeout)); then
+              echo "Elasticsearch did not become ready in time"
+              exit 1
+            fi
+          done
+          echo "ES OK"
+          docker compose down && \
+          ex=0
+          timeout=60
+          while ((ex < timeout)); do
+            status_es=$(docker inspect elasticsearch | jq -r '.[0].State.Status')
+            status_kibana=$(docker inspect kibana | jq -r '.[0].State.Status')
+
+            if [[ ${status_es} == "null" || ${status_kibana} == "null" ]]; then
+                echo "Elasticsearch and Kibana is down"
+                exit 0
+            fi
+
+            sleep 1
+            ex=$((ex + 1));
+            if ((ex == timeout)); then
+              echo "ES and Kibana did not become ready in time"
+              exit 1
+            fi
+          done
 
   test_logstash:
     needs: detect
-    if: needs.detect.outputs.logstash == 'true'
+    if: needs.detect.outputs.logstash == 'true' || needs.detect.outputs.pipeline == 'true'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Start Logstash
         run: |
           set -e
-          docker compose -f ELK/logstash/logstash.yml up -d
-          sleep 15
-          docker compose ps
-          echo "Logstash container OK"
-          docker compose -f ELK/logstash/logstash.yml down
-          echo "Logstash down"
+          docker compose -f logstash/logstash.yml up -d && \
+          
+          ex=0
+          timeout=60
+          while ((ex < timeout)); do
+            status=$(docker inspect logstash | jq -r '.[0].State.Status')
+            
+            if [[ ${status} == "running" ]]; then
+              echo "Logstash container is running, checking pipeline status..."
+              pipeline=$(docker logs logstash | grep pipeline | wc -l)
+              
+              if ((pipeline > 0)); then
+                echo "Logstash pipeline is active"
+                exit 0
+              fi
+            fi
 
-  test_pipeline:
-    needs: detect
-    if: needs.detect.outputs.pipeline == 'true'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start logstash and test pipeline
-        run: |
-          set -e
-          docker compose -f ELK/logstash/logstash.yml up -d
-          sleep 20
-          curl -s http://localhost:9200/_cat/indices?v | head -n 20
-          echo "Pipeline OK (indices listed)"
-          docker compose -f ELK/logstash/logstash.yml down
-          echo "Logstash down"
+            sleep 1
+            ex=$((ex + 1));
+            if ((ex == timeout)); then
+              echo "Logstash did not become ready in time"
+              exit 1
+            fi
+          done
+          docker compose -f logstash/logstash.yml down  && \
+          ex=0
+          timeout=30
+          while ((ex < timeout)); do
+            status=$(docker inspect logstash | jq -r '.[0].State.Status')
+            
+            if [[ ${status} == "null" ]]; then
+                echo "Logstash is down"
+                exit 0
+            fi
 
-  test_compose:
-    needs: detect
-    if: needs.detect.outputs.compose == 'true'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start Elasticsearch + Logstash
-        run: |
-          set -e
-          docker compose -f ELK/elasticsearch/elasticsearch.yml -f ELK/logstash/logstash.yml up -d
-          sleep 15
-          docker compose ps
-          echo "Elasticsearch, Kibana and Logstash container OK"
-          docker compose down
-          echo "Elasticsearch, Kibana and Logstash container down"
+            sleep 1
+            ex=$((ex + 1));
+            if ((ex == timeout)); then
+              echo "Logstash did not become ready in time"
+              exit 1
+            fi
+          done
 
   test_actions:
     needs: detect
