@@ -26,17 +26,17 @@ jobs:
         with:
           filters: |
             compose:
-              - 'docker-compose.yml'
-              - 'compose*.yml'
+              - 'ELK/docker-compose.yml'
+              - 'ELK/compose*.yml'
               - '**/compose*.yml'
             es:
-              - 'elasticsearch/**'
+              - 'ELK/elasticsearch/**'
             kibana:
-              - 'kibana/**'
+              - 'ELK/kibana/**'
             logstash:
-              - 'logstash/**'
+              - 'ELK/logstash/**'
             pipeline:
-              - 'logstash/pipeline/**'
+              - 'ELK/logstash/pipeline/**'
             actions:
               - '.github/workflows/**'
 
@@ -49,6 +49,7 @@ jobs:
       - name: Start Elasticsearch
         run: |
           set -e
+          cd ELK
           docker compose up -d && \
           ex=0
           timeout=120
@@ -104,6 +105,7 @@ jobs:
       - name: Start Logstash
         run: |
           set -e
+          cd ELK
           docker compose -f logstash/logstash.yml up -d && \
           
           ex=0
